@@ -555,18 +555,36 @@ function generateGrid(config) {
     const totalCells = rows * cols;
     const actualPairs = Math.min(pairs, Math.floor(totalCells / 2));
 
-    // 无限尝试直到生成可解的布局
+    const deadline = Date.now() + 2000; // 2秒时间限制
+    let bestGrid = null;
+    let bestScore = -1; // 可消除的卡片数，-1表示还没找到
     let attempt = 0;
-    while (true) {
+
+    while (Date.now() < deadline) {
         attempt++;
         const grid = createRandomGrid(rows, cols, actualPairs);
-        // 检查：可解 + 同卡片相邻数<=2
-        if (hasLowAdjacency(grid, rows, cols) && isSolvableGrid(grid, rows, cols)) {
-            console.log(`布局生成成功，尝试次数: ${attempt}`);
+
+        // 相邻约束不通过，跳过
+        if (!hasLowAdjacency(grid, rows, cols)) continue;
+
+        const score = solveGrid(grid, rows, cols);
+
+        if (score === totalCells) {
+            // 可解！直接使用
+            console.log(`布局生成成功，尝试次数: ${attempt}, 得分: ${score}/${totalCells}`);
             gameState.grid = grid;
             return;
         }
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestGrid = grid;
+        }
     }
+
+    // 2秒内未找到完美解，使用消除数最多的布局
+    console.log(`布局生成超时，尝试: ${attempt}次，最佳: ${bestScore}/${rows * cols}`);
+    gameState.grid = bestGrid || createRandomGrid(rows, cols, actualPairs);
 }
 
 // ===== 检查同卡片相邻对总数是否<=2 =====
@@ -627,55 +645,65 @@ function createRandomGrid(rows, cols, pairs) {
     return grid;
 }
 
-// ===== 检查布局是否可解（回溯算法） =====
-function isSolvableGrid(grid, rows, cols) {
-    // 深拷贝网格状态用于模拟
+// ===== 检查布局可解性（确定性批量求解器） =====
+// 消除只会开放更多路径，不会阻塞，因此确定性一次遍历即可确定可消除总数
+function solveGrid(grid, rows, cols) {
     const state = grid.map(row => row.map(cell => ({ 
         emoji: cell.emoji, 
         matched: false 
     })));
     
-    return solveRecursive(state, rows, cols);
-}
-
-function solveRecursive(state, rows, cols) {
-    // 获取所有未消除的卡片
-    const remaining = [];
-    for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-            if (state[r][c].emoji && !state[r][c].matched) {
-                remaining.push({ row: r, col: c, emoji: state[r][c].emoji });
+    let matchedCount = 0;
+    
+    while (true) {
+        const remaining = [];
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                if (state[r][c].emoji && !state[r][c].matched) {
+                    remaining.push({ row: r, col: c, emoji: state[r][c].emoji });
+                }
             }
         }
-    }
-    
-    // 全部消除完毕，可解
-    if (remaining.length === 0) return true;
-    
-    // 找到所有可连接的配对
-    const connectablePairs = findConnectablePairsInState(state, remaining, rows, cols);
-    
-    // 没有可消除的配对，不可解
-    if (connectablePairs.length === 0) return false;
-    
-    // 尝试每个可连接的配对
-    for (const [a, b] of connectablePairs) {
-        state[a.row][a.col].matched = true;
-        state[b.row][b.col].matched = true;
         
-        if (solveRecursive(state, rows, cols)) {
-            // 恢复状态（虽然找到解了，但保持干净）
-            state[a.row][a.col].matched = false;
-            state[b.row][b.col].matched = false;
-            return true;
+        if (remaining.length === 0) return matchedCount;
+        
+        // 找到所有可连接配对，全部消除（消除顺序不影响最终结果）
+        const allPairs = findConnectablePairsInState(state, remaining, rows, cols);
+        if (allPairs.length === 0) return matchedCount;
+        
+        for (const [a, b] of allPairs) {
+            state[a.row][a.col].matched = true;
+            state[b.row][b.col].matched = true;
+            matchedCount += 2;
+        }
+    }
+}
+
+// 确定性求解器（从已有状态开始，部分格子已matched）
+function solveFromState(state, rows, cols) {
+    let matchedCount = 0;
+    
+    while (true) {
+        const remaining = [];
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                if (state[r][c].emoji && !state[r][c].matched) {
+                    remaining.push({ row: r, col: c, emoji: state[r][c].emoji });
+                }
+            }
         }
         
-        // 回溯
-        state[a.row][a.col].matched = false;
-        state[b.row][b.col].matched = false;
+        if (remaining.length === 0) return rows * cols;
+        
+        const allPairs = findConnectablePairsInState(state, remaining, rows, cols);
+        if (allPairs.length === 0) return matchedCount;
+        
+        for (const [a, b] of allPairs) {
+            state[a.row][a.col].matched = true;
+            state[b.row][b.col].matched = true;
+            matchedCount += 2;
+        }
     }
-    
-    return false;
 }
 
 function findConnectablePairsInState(state, cards, rows, cols) {
@@ -1225,6 +1253,7 @@ function autoShuffle() {
 
     const rows = gameState.grid.length;
     const cols = gameState.grid[0].length;
+    const totalCells = rows * cols;
 
     // 收集所有未匹配的emoji
     let emojis = [];
@@ -1237,14 +1266,16 @@ function autoShuffle() {
         }
     }
 
-    // 无限尝试直到生成可解的布局
+    const deadline = Date.now() + 1000; // 1秒时间限制
+    let bestShuffle = null;
+    let bestScore = -1;
     let attempt = 0;
-    while (true) {
+
+    while (Date.now() < deadline) {
         attempt++;
         const shuffledEmojis = shuffleArray([...emojis]);
         let index = 0;
         
-        // 创建临时网格状态用于验证
         const tempState = gameState.grid.map(row => 
             row.map(cell => ({ emoji: cell.emoji, matched: cell.matched }))
         );
@@ -1258,33 +1289,42 @@ function autoShuffle() {
             }
         }
         
-        // 检查洗牌后是否可解 + 相邻约束
-        if (hasLowAdjacency(tempState, rows, cols) && isShuffledSolvable(tempState, rows, cols)) {
-            // 应用洗牌结果
-            index = 0;
-            for (let r = 0; r < rows; r++) {
-                for (let c = 0; c < cols; c++) {
-                    const cell = gameState.grid[r][c];
-                    if (cell.emoji && !cell.matched) {
-                        cell.emoji = shuffledEmojis[index++];
-                        cell.element.textContent = cell.emoji;
-                    }
-                }
-            }
+        // 相邻约束不通过，跳过
+        if (!hasLowAdjacency(tempState, rows, cols)) continue;
+
+        const score = solveFromState(tempState, rows, cols);
+        
+        if (score === totalCells) {
+            // 可解！直接应用
+            applyShuffle(shuffledEmojis);
             console.log(`洗牌成功，尝试次数: ${attempt}`);
             return;
         }
+        
+        if (score > bestScore) {
+            bestScore = score;
+            bestShuffle = shuffledEmojis;
+        }
     }
+
+    // 超时，使用最佳结果
+    console.log(`洗牌超时，尝试: ${attempt}次，最佳: ${bestScore}/${totalCells}`);
+    applyShuffle(bestShuffle || shuffleArray([...emojis]));
 }
 
-// ===== 检查洗牌后的布局是否可解 =====
-function isShuffledSolvable(state, rows, cols) {
-    // 复制状态用于回溯验证
-    const copyState = state.map(row => row.map(cell => ({ 
-        emoji: cell.emoji, 
-        matched: cell.matched 
-    })));
-    return solveRecursive(copyState, rows, cols);
+function applyShuffle(shuffledEmojis) {
+    const rows = gameState.grid.length;
+    const cols = gameState.grid[0].length;
+    let index = 0;
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            const cell = gameState.grid[r][c];
+            if (cell.emoji && !cell.matched) {
+                cell.emoji = shuffledEmojis[index++];
+                cell.element.textContent = cell.emoji;
+            }
+        }
+    }
 }
 
 // ===== 道具功能 =====
