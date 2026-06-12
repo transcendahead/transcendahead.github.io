@@ -919,4 +919,4 @@ function hideModal(id) {
 }
 
 // ===== 启动游戏 =====
-window.addEventListener('DOMContentLoaded', init);
+window.addEventListener('load', init);
