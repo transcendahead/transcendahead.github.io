@@ -44,6 +44,387 @@ const CONFIG = {
     comboTimeout: 10000  // 10秒未匹配则连击中断
 };
 
+// ===== 音效系统（Web Audio API 合成音效） =====
+const SoundSystem = {
+    audioCtx: null,
+    enabled: true,
+
+    init() {
+        if (this.audioCtx) return;
+        this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    },
+
+    // ===== 消除音效 - 清脆电子"叮" =====
+    playMatch() {
+        if (!this.enabled) return;
+        this.init();
+        const ctx = this.audioCtx;
+        const now = ctx.currentTime;
+
+        // 单音符电子音
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(523, now); // C5
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.2);
+
+        // 轻微泛音增加清脆感
+        const osc2 = ctx.createOscillator();
+        const gain2 = ctx.createGain();
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(1047, now); // C6 泛音
+        gain2.gain.setValueAtTime(0.1, now);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+        osc2.start(now);
+        osc2.stop(now + 0.15);
+    },
+
+    // ===== 连击音效 - 递进 level 1-5 =====
+    playCombo(level) {
+        if (!this.enabled) return;
+        this.init();
+
+        // 高连击里程碑：5/10/20 特殊音效
+        if (level === 5) {
+            this.playComboMilestone(5);
+            return;
+        }
+        if (level === 10) {
+            this.playComboMilestone(10);
+            return;
+        }
+        if (level === 20) {
+            this.playComboFanfare();
+            return;
+        }
+
+        // 普通连击：level 1-5 递进
+        const ctx = this.audioCtx;
+        const now = ctx.currentTime;
+        const clampedLevel = Math.min(level, 5);
+
+        // 音阶：C E G C (Do Mi Sol Do) 随等级增加音符
+        const notes = [
+            [523],           // Level 1: C
+            [523, 659],      // Level 2: C E
+            [523, 659, 784], // Level 3: C E G
+            [523, 659, 784, 1047], // Level 4: C E G C
+            [523, 659, 784, 1047, 1319] // Level 5: C E G C E
+        ];
+
+        const freqs = notes[clampedLevel - 1];
+        freqs.forEach((freq, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now + i * 0.06);
+            gain.gain.setValueAtTime(0.2, now + i * 0.06);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.06 + 0.2);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + i * 0.06);
+            osc.stop(now + i * 0.06 + 0.2);
+
+            // 添加泛音增加亮度
+            const osc2 = ctx.createOscillator();
+            const gain2 = ctx.createGain();
+            osc2.type = 'sine';
+            osc2.frequency.setValueAtTime(freq * 2, now + i * 0.06);
+            gain2.gain.setValueAtTime(0.08, now + i * 0.06);
+            gain2.gain.exponentialRampToValueAtTime(0.001, now + i * 0.06 + 0.15);
+            osc2.connect(gain2);
+            gain2.connect(ctx.destination);
+            osc2.start(now + i * 0.06);
+            osc2.stop(now + i * 0.06 + 0.15);
+        });
+    },
+
+    // ===== 连击里程碑 5/10 =====
+    playComboMilestone(milestone) {
+        if (!this.enabled) return;
+        this.init();
+        const ctx = this.audioCtx;
+        const now = ctx.currentTime;
+
+        // 欢快的上行音阶 + 闪烁感
+        const notes = milestone === 5 
+            ? [523, 659, 784, 1047, 1319]  // C E G C E
+            : [523, 659, 784, 1047, 1319, 1568]; // C E G C E G
+
+        notes.forEach((freq, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now + i * 0.05);
+            gain.gain.setValueAtTime(0.25, now + i * 0.05);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.05 + 0.25);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + i * 0.05);
+            osc.stop(now + i * 0.05 + 0.25);
+        });
+
+        // 添加闪亮的高频泛音
+        const sparkle = ctx.createOscillator();
+        const sparkleGain = ctx.createGain();
+        sparkle.type = 'sine';
+        sparkle.frequency.setValueAtTime(2000, now + 0.2);
+        sparkle.frequency.exponentialRampToValueAtTime(3000, now + 0.4);
+        sparkleGain.gain.setValueAtTime(0.1, now + 0.2);
+        sparkleGain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+        sparkle.connect(sparkleGain);
+        sparkleGain.connect(ctx.destination);
+        sparkle.start(now + 0.2);
+        sparkle.stop(now + 0.5);
+    },
+
+    // ===== 20连击 Fanfare 号角 =====
+    playComboFanfare() {
+        if (!this.enabled) return;
+        this.init();
+        const ctx = this.audioCtx;
+        const now = ctx.currentTime;
+
+        // 号角音效：强有力的上行和弦
+        const chords = [
+            [392, 494, 587],  // G B D
+            [523, 659, 784],  // C E G
+            [659, 784, 988],  // E G B
+            [784, 988, 1175], // G B D
+        ];
+
+        chords.forEach((chord, chordIdx) => {
+            chord.forEach((freq, noteIdx) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(freq, now + chordIdx * 0.1);
+                gain.gain.setValueAtTime(0, now + chordIdx * 0.1);
+                gain.gain.linearRampToValueAtTime(0.15, now + chordIdx * 0.1 + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + chordIdx * 0.1 + 0.3);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now + chordIdx * 0.1);
+                osc.stop(now + chordIdx * 0.1 + 0.3);
+            });
+        });
+
+        // 顶部闪亮
+        [1047, 1319, 1568].forEach((freq, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now + 0.35 + i * 0.05);
+            gain.gain.setValueAtTime(0.2, now + 0.35 + i * 0.05);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35 + i * 0.05 + 0.4);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + 0.35 + i * 0.05);
+            osc.stop(now + 0.35 + i * 0.05 + 0.4);
+        });
+    },
+
+    // ===== 游戏结束音效（下降音） =====
+    playGameOver() {
+        if (!this.enabled) return;
+        this.init();
+        const ctx = this.audioCtx;
+        const now = ctx.currentTime;
+
+        [440, 349, 294, 220].forEach((freq, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now + i * 0.2);
+            gain.gain.setValueAtTime(0.2, now + i * 0.2);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.2 + 0.3);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + i * 0.2);
+            osc.stop(now + i * 0.2 + 0.3);
+        });
+    },
+
+    // ===== 通关音效 - 4秒欢快管弦乐 Fanfare =====
+    playLevelComplete() {
+        if (!this.enabled) return;
+        this.init();
+        const ctx = this.audioCtx;
+        const now = ctx.currentTime;
+
+        // 第一段：上行音阶 (0-1s)
+        const phrase1 = [523, 659, 784, 1047]; // C E G C
+        phrase1.forEach((freq, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now + i * 0.15);
+            gain.gain.setValueAtTime(0.3, now + i * 0.15);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.15 + 0.35);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + i * 0.15);
+            osc.stop(now + i * 0.15 + 0.35);
+
+            // 泛音
+            const osc2 = ctx.createOscillator();
+            const gain2 = ctx.createGain();
+            osc2.type = 'sine';
+            osc2.frequency.setValueAtTime(freq * 2, now + i * 0.15);
+            gain2.gain.setValueAtTime(0.1, now + i * 0.15);
+            gain2.gain.exponentialRampToValueAtTime(0.001, now + i * 0.15 + 0.25);
+            osc2.connect(gain2);
+            gain2.connect(ctx.destination);
+            osc2.start(now + i * 0.15);
+            osc2.stop(now + i * 0.15 + 0.25);
+        });
+
+        // 第二段：和弦进行 (1-2.5s)
+        const chords = [
+            { time: 1.0, notes: [523, 659, 784], gain: 0.2 },      // C major
+            { time: 1.3, notes: [587, 740, 880], gain: 0.2 },      // D minor
+            { time: 1.6, notes: [659, 784, 988], gain: 0.2 },      // E minor
+            { time: 1.9, notes: [784, 988, 1175], gain: 0.25 },    // G major
+        ];
+
+        chords.forEach(chord => {
+            chord.notes.forEach(freq => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(freq, now + chord.time);
+                gain.gain.setValueAtTime(chord.gain, now + chord.time);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + chord.time + 0.4);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now + chord.time);
+                osc.stop(now + chord.time + 0.4);
+            });
+        });
+
+        // 第三段：高潮 (2.5-4s)
+        const finale = [
+            { time: 2.5, freq: 1047, duration: 0.5 },  // C
+            { time: 2.7, freq: 1319, duration: 0.5 },  // E
+            { time: 2.9, freq: 1568, duration: 0.6 },  // G
+            { time: 3.2, freq: 2093, duration: 0.8 },  // 高音 C
+        ];
+
+        finale.forEach(note => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(note.freq, now + note.time);
+            gain.gain.setValueAtTime(0.3, now + note.time);
+            gain.gain.setValueAtTime(0.3, now + note.time + note.duration * 0.6);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + note.time + note.duration);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + note.time);
+            osc.stop(now + note.time + note.duration);
+
+            // 泛音增加辉煌感
+            const osc2 = ctx.createOscillator();
+            const gain2 = ctx.createGain();
+            osc2.type = 'sine';
+            osc2.frequency.setValueAtTime(note.freq * 2, now + note.time);
+            gain2.gain.setValueAtTime(0.12, now + note.time);
+            gain2.gain.exponentialRampToValueAtTime(0.001, now + note.time + note.duration * 0.8);
+            osc2.connect(gain2);
+            gain2.connect(ctx.destination);
+            osc2.start(now + note.time);
+            osc2.stop(now + note.time + note.duration * 0.8);
+        });
+
+        // 最后的和弦 (3.5-4s)
+        [523, 659, 784, 1047].forEach(freq => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, now + 3.5);
+            gain.gain.setValueAtTime(0.15, now + 3.5);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 4.0);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + 3.5);
+            osc.stop(now + 4.0);
+        });
+    },
+
+    // ===== 按钮点击音效 =====
+    playClick() {
+        if (!this.enabled) return;
+        this.init();
+        const ctx = this.audioCtx;
+        const now = ctx.currentTime;
+
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(600, now);
+        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.08);
+    },
+
+    // ===== 提示音效 =====
+    playHint() {
+        if (!this.enabled) return;
+        this.init();
+        const ctx = this.audioCtx;
+        const now = ctx.currentTime;
+
+        [880, 1100].forEach((freq, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now + i * 0.08);
+            gain.gain.setValueAtTime(0.15, now + i * 0.08);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.15);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + i * 0.08);
+            osc.stop(now + i * 0.08 + 0.15);
+        });
+    },
+
+    // ===== 洗牌音效 =====
+    playShuffle() {
+        if (!this.enabled) return;
+        this.init();
+        const ctx = this.audioCtx;
+        const now = ctx.currentTime;
+
+        for (let i = 0; i < 6; i++) {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(200 + Math.random() * 400, now + i * 0.05);
+            gain.gain.setValueAtTime(0.08, now + i * 0.05);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.05 + 0.08);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + i * 0.05);
+            osc.stop(now + i * 0.05 + 0.08);
+        }
+    },
+
+    toggle() {
+        this.enabled = !this.enabled;
+        return this.enabled;
+    }
+};
+
 // ===== 游戏状态 =====
 let gameState = {
     level: 1,
@@ -108,6 +489,7 @@ function bindEvents() {
     document.getElementById('shuffleBtn').addEventListener('click', useShuffle);
     document.getElementById('addTimeBtn').addEventListener('click', useAddTime);
     document.getElementById('pauseBtn').addEventListener('click', togglePause);
+    document.getElementById('soundBtn').addEventListener('click', toggleSound);
 }
 
 function resizeCanvas() {
@@ -167,32 +549,66 @@ function showGameBoard() {
     elements.gameHeader.classList.add('active');
 }
 
-// ===== 网格生成 =====
+// ===== 网格生成（逆向算法，保证可完成） =====
 function generateGrid(config) {
     const { rows, cols, pairs } = config;
     const totalCells = rows * cols;
-
-    // 确保有足够空间放置所有配对
     const actualPairs = Math.min(pairs, Math.floor(totalCells / 2));
 
-    // 创建卡片数组
+    // 无限尝试直到生成可解的布局
+    let attempt = 0;
+    while (true) {
+        attempt++;
+        const grid = createRandomGrid(rows, cols, actualPairs);
+        // 检查：可解 + 同卡片相邻数<=2
+        if (hasLowAdjacency(grid, rows, cols) && isSolvableGrid(grid, rows, cols)) {
+            console.log(`布局生成成功，尝试次数: ${attempt}`);
+            gameState.grid = grid;
+            return;
+        }
+    }
+}
+
+// ===== 检查同卡片相邻对总数是否<=2 =====
+function hasLowAdjacency(grid, rows, cols) {
+    let totalAdjacentPairs = 0;
+    
+    // 只检查右和下方向，避免重复计数
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            const emoji = grid[r][c].emoji;
+            if (!emoji) continue;
+            
+            // 检查右边
+            if (c < cols - 1 && grid[r][c+1].emoji === emoji) {
+                totalAdjacentPairs++;
+            }
+            // 检查下边
+            if (r < rows - 1 && grid[r+1][c].emoji === emoji) {
+                totalAdjacentPairs++;
+            }
+        }
+    }
+    
+    return totalAdjacentPairs <= 2;
+}
+
+function createRandomGrid(rows, cols, pairs) {
+    const totalCells = rows * cols;
     let cards = [];
-    const shuffledEmojis = shuffleArray([...CONFIG.foodEmojis]).slice(0, actualPairs);
+    const shuffledEmojis = shuffleArray([...CONFIG.foodEmojis]).slice(0, pairs);
 
     for (let emoji of shuffledEmojis) {
         cards.push(emoji, emoji);
     }
 
-    // 如果格子数多于配对数，添加空白格
     while (cards.length < totalCells) {
         cards.push(null);
     }
 
-    // 打乱顺序
     cards = shuffleArray(cards);
 
-    // 填充二维网格
-    gameState.grid = [];
+    const grid = [];
     let index = 0;
     for (let r = 0; r < rows; r++) {
         let row = [];
@@ -206,8 +622,137 @@ function generateGrid(config) {
             });
             index++;
         }
-        gameState.grid.push(row);
+        grid.push(row);
     }
+    return grid;
+}
+
+// ===== 检查布局是否可解（回溯算法） =====
+function isSolvableGrid(grid, rows, cols) {
+    // 深拷贝网格状态用于模拟
+    const state = grid.map(row => row.map(cell => ({ 
+        emoji: cell.emoji, 
+        matched: false 
+    })));
+    
+    return solveRecursive(state, rows, cols);
+}
+
+function solveRecursive(state, rows, cols) {
+    // 获取所有未消除的卡片
+    const remaining = [];
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            if (state[r][c].emoji && !state[r][c].matched) {
+                remaining.push({ row: r, col: c, emoji: state[r][c].emoji });
+            }
+        }
+    }
+    
+    // 全部消除完毕，可解
+    if (remaining.length === 0) return true;
+    
+    // 找到所有可连接的配对
+    const connectablePairs = findConnectablePairsInState(state, remaining, rows, cols);
+    
+    // 没有可消除的配对，不可解
+    if (connectablePairs.length === 0) return false;
+    
+    // 尝试每个可连接的配对
+    for (const [a, b] of connectablePairs) {
+        state[a.row][a.col].matched = true;
+        state[b.row][b.col].matched = true;
+        
+        if (solveRecursive(state, rows, cols)) {
+            // 恢复状态（虽然找到解了，但保持干净）
+            state[a.row][a.col].matched = false;
+            state[b.row][b.col].matched = false;
+            return true;
+        }
+        
+        // 回溯
+        state[a.row][a.col].matched = false;
+        state[b.row][b.col].matched = false;
+    }
+    
+    return false;
+}
+
+function findConnectablePairsInState(state, cards, rows, cols) {
+    const pairs = [];
+    
+    for (let i = 0; i < cards.length; i++) {
+        for (let j = i + 1; j < cards.length; j++) {
+            if (cards[i].emoji === cards[j].emoji) {
+                if (canConnectInState(state, cards[i], cards[j], rows, cols)) {
+                    pairs.push([cards[i], cards[j]]);
+                }
+            }
+        }
+    }
+    
+    return pairs;
+}
+
+function canConnectInState(state, start, end, rows, cols) {
+    const extRows = rows + 2;
+    const extCols = cols + 2;
+
+    function isPassable(er, ec) {
+        if (er === 0 || er === extRows - 1 || ec === 0 || ec === extCols - 1) {
+            return true;
+        }
+        const r = er - 1;
+        const c = ec - 1;
+        const cell = state[r][c];
+        return cell.matched || cell.emoji === null ||
+               (r === start.row && c === start.col) ||
+               (r === end.row && c === end.col);
+    }
+
+    const startExt = { r: start.row + 1, c: start.col + 1 };
+    const endExt = { r: end.row + 1, c: end.col + 1 };
+
+    const queue = [{ ...startExt, turns: 0, dir: null }];
+    const visited = new Set();
+    visited.add(`${startExt.r},${startExt.c},0,null`);
+
+    const directions = [
+        { dr: -1, dc: 0, name: 'up' },
+        { dr: 1, dc: 0, name: 'down' },
+        { dr: 0, dc: -1, name: 'left' },
+        { dr: 0, dc: 1, name: 'right' }
+    ];
+
+    while (queue.length > 0) {
+        const current = queue.shift();
+
+        if (current.r === endExt.r && current.c === endExt.c) {
+            return true;
+        }
+
+        for (const dir of directions) {
+            const nr = current.r + dir.dr;
+            const nc = current.c + dir.dc;
+
+            if (nr < 0 || nr >= extRows || nc < 0 || nc >= extCols) continue;
+            if (!isPassable(nr, nc)) continue;
+
+            const newTurns = current.dir !== null && current.dir !== dir.name
+                ? current.turns + 1
+                : current.turns;
+
+            if (newTurns > 2) continue;
+
+            const key = `${nr},${nc},${newTurns},${dir.name}`;
+            if (visited.has(key)) continue;
+            visited.add(key);
+
+            queue.push({ r: nr, c: nc, turns: newTurns, dir: dir.name });
+        }
+    }
+
+    return false;
 }
 
 function shuffleArray(array) {
@@ -491,9 +1036,12 @@ function matchCards(first, second, path) {
     const totalPoints = baseScore + comboBonus;
     gameState.score += totalPoints;
 
-    // 显示连击
+    // 播放音效：连击时只播放连击音效，避免混音
     if (gameState.combo >= 2) {
         showCombo(gameState.combo);
+        SoundSystem.playCombo(gameState.combo);
+    } else {
+        SoundSystem.playMatch();
     }
 
     // 动画效果
@@ -689,23 +1237,54 @@ function autoShuffle() {
         }
     }
 
-    // 打乱并重新分配
-    emojis = shuffleArray(emojis);
-    let index = 0;
-    for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-            const cell = gameState.grid[r][c];
-            if (cell.emoji && !cell.matched) {
-                cell.emoji = emojis[index++];
-                cell.element.textContent = cell.emoji;
+    // 无限尝试直到生成可解的布局
+    let attempt = 0;
+    while (true) {
+        attempt++;
+        const shuffledEmojis = shuffleArray([...emojis]);
+        let index = 0;
+        
+        // 创建临时网格状态用于验证
+        const tempState = gameState.grid.map(row => 
+            row.map(cell => ({ emoji: cell.emoji, matched: cell.matched }))
+        );
+        
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const cell = tempState[r][c];
+                if (cell.emoji && !cell.matched) {
+                    cell.emoji = shuffledEmojis[index++];
+                }
             }
         }
+        
+        // 检查洗牌后是否可解 + 相邻约束
+        if (hasLowAdjacency(tempState, rows, cols) && isShuffledSolvable(tempState, rows, cols)) {
+            // 应用洗牌结果
+            index = 0;
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const cell = gameState.grid[r][c];
+                    if (cell.emoji && !cell.matched) {
+                        cell.emoji = shuffledEmojis[index++];
+                        cell.element.textContent = cell.emoji;
+                    }
+                }
+            }
+            console.log(`洗牌成功，尝试次数: ${attempt}`);
+            return;
+        }
     }
+}
 
-    // 如果洗牌后仍然没有可消除的，再次洗牌
-    if (!hasValidMoves() && emojis.length > 0) {
-        setTimeout(autoShuffle, 500);
-    }
+// ===== 检查洗牌后的布局是否可解 =====
+function isShuffledSolvable(state, rows, cols) {
+    // 复制状态用于回溯验证
+    const copyState = state.map(row => row.map(cell => ({ 
+        emoji: cell.emoji, 
+        matched: cell.matched 
+    })));
+    return solveRecursive(copyState, rows, cols);
 }
 
 // ===== 道具功能 =====
@@ -732,6 +1311,8 @@ function useHint() {
                             gameState.tools.hint--;
                             updateToolButtons();
 
+                            SoundSystem.playHint();
+
                             cell1.element.classList.add('hint');
                             cell2.element.classList.add('hint');
 
@@ -754,6 +1335,7 @@ function useShuffle() {
 
     gameState.tools.shuffle--;
     updateToolButtons();
+    SoundSystem.playShuffle();
     autoShuffle();
 }
 
@@ -803,6 +1385,11 @@ function hidePauseOverlay() {
     if (overlay) overlay.remove();
 }
 
+function toggleSound() {
+    const enabled = SoundSystem.toggle();
+    document.getElementById('soundIcon').textContent = enabled ? '🔊' : '🔇';
+}
+
 // ===== 计时器 =====
 function startTimer() {
     stopTimer();
@@ -844,6 +1431,9 @@ function levelComplete() {
     gameState.tools.hint++;
     gameState.tools.shuffle++;
 
+    // 播放通关音效
+    SoundSystem.playLevelComplete();
+
     updateUI();
 
     setTimeout(() => {
@@ -863,6 +1453,13 @@ function levelComplete() {
 function gameOver(isWin) {
     stopTimer();
     gameState.isPlaying = false;
+
+    // 播放游戏结束音效
+    if (isWin) {
+        // 通关音效已在 levelComplete 中播放
+    } else {
+        SoundSystem.playGameOver();
+    }
 
     const title = document.getElementById('gameOverTitle');
     const message = document.getElementById('gameOverMessage');
