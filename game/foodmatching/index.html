@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>美食连连看</title>
+    <link rel="stylesheet" href="style.css?v=3">
+</head>
+<body>
+    <div class="game-container">
+        <!-- 顶部状态栏 -->
+        <header class="game-header" id="gameHeader">
+            <div class="level-info">
+                <span class="label">关卡</span>
+                <span class="value" id="level">1</span>
+            </div>
+            <div class="score-info">
+                <span class="label">得分</span>
+                <span class="value" id="score">0</span>
+            </div>
+            <div class="time-info">
+                <span class="label">时间</span>
+                <span class="value" id="time">60</span>
+            </div>
+        </header>
+
+        <!-- 游戏主区域 -->
+        <main class="game-main">
+            <!-- 开始菜单 -->
+            <div class="menu-screen" id="menuScreen">
+                <h1 class="game-title">🍔 美食连连看 🍕</h1>
+                <p class="game-subtitle">找出相同的美食，连接消除它们！</p>
+                <div class="menu-buttons">
+                    <button class="btn btn-primary" id="startBtn">开始游戏</button>
+                    <button class="btn btn-secondary" id="helpBtn">游戏说明</button>
+                </div>
+            </div>
+
+            <!-- 游戏棋盘 -->
+            <div class="game-board" id="gameBoard">
+                <canvas id="gameCanvas"></canvas>
+                <div class="grid-container" id="gridContainer"></div>
+            </div>
+
+            <!-- 游戏说明弹窗 -->
+            <div class="modal" id="helpModal">
+                <div class="modal-content">
+                    <h2>游戏说明</h2>
+                    <ul>
+                        <li>点击两张相同的美食卡片进行消除</li>
+                        <li>连接路径不能超过 <strong>2个拐弯</strong></li>
+                        <li>每关有时间限制，消除所有卡片即可过关</li>
+                        <li>连击可获得额外加分</li>
+                    </ul>
+                    <h3>道具说明</h3>
+                    <ul>
+                        <li>💡 提示：显示一对可消除的卡片</li>
+                        <li>🔄 洗牌：重新排列所有卡片</li>
+                        <li>⏰ 加时：增加15秒时间</li>
+                    </ul>
+                    <button class="btn btn-primary" id="closeHelpBtn">知道了</button>
+                </div>
+            </div>
+
+            <!-- 游戏结束弹窗 -->
+            <div class="modal" id="gameOverModal">
+                <div class="modal-content">
+                    <h2 id="gameOverTitle">游戏结束</h2>
+                    <p id="gameOverMessage"></p>
+                    <div class="final-stats">
+                        <div>最终得分: <span id="finalScore">0</span></div>
+                        <div>到达关卡: <span id="finalLevel">1</span></div>
+                    </div>
+                    <div class="modal-buttons">
+                        <button class="btn btn-primary" id="restartBtn">再玩一次</button>
+                        <button class="btn btn-secondary" id="menuBtn">返回菜单</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 底部工具栏 -->
+        <footer class="game-footer" id="gameFooter">
+            <button class="tool-btn" id="hintBtn" title="提示">
+                <span class="tool-icon">💡</span>
+                <span class="tool-count" id="hintCount">3</span>
+            </button>
+            <button class="tool-btn" id="shuffleBtn" title="洗牌">
+                <span class="tool-icon">🔄</span>
+                <span class="tool-count" id="shuffleCount">3</span>
+            </button>
+            <button class="tool-btn" id="addTimeBtn" title="加时">
+                <span class="tool-icon">⏰</span>
+                <span class="tool-count" id="addTimeCount">2</span>
+            </button>
+            <button class="tool-btn" id="pauseBtn" title="暂停">
+                <span class="tool-icon">⏸️</span>
+            </button>
+        </footer>
+    </div>
+
+    <!-- 连击提示 -->
+    <div class="combo-popup" id="comboPopup"></div>
+
+    <script src="game.js?v=3"></script>
+</body>
+</html>
